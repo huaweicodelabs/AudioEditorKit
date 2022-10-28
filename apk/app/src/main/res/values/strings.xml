@@ -13,6 +13,14 @@
     <string name="extract_fail">Audio extraction failed.</string>
     <string name="main_extract">Audio extraction</string>
     <string name="main_format">Format conversion</string>
+    <string name="main_title">Petal Li Yin</string>
+    <string name="main_draft">Draft box</string>
+    <string name="main_clip">Music Clips</string>
+    <string name="main_clip_text2">Import Audio Easy Editing</string>
+
+    <string name="main_popup_window_text1">Delete</string>
+    <string name="main_popup_window_text2">Rename</string>
+    <string name="main_popup_window_text3">Draft Copy</string>
     <string name="main_effect">Effects</string>
     <string name="main_withdraw">Audio extraction</string>
     <string name="file_not_avable">This file is not available</string>
@@ -38,6 +46,9 @@
     <string name="sound_male">Male</string>
     <string name="sound_monsters">Monster</string>
     <string name="begin_change">Start Voice FX</string>
+    <string name="sound_trill">Trill</string>
+    <string name="sound_normal">Normal</string>
+    <string name="begin_change_common">Start Voice FX(common)</string>
     <string name="pcm_file_not_exists">PCM file does not exist</string>
     <string name="change_sound_pcm_path">Please enter the path of the pcm file</string>
     <string name="begin_reduction">Start noise reduction</string>
@@ -122,7 +133,7 @@
     <string name="no_write_permission">no file permission</string>
     <string name="local_separation">"Voice separation (device-side version)"</string>
     <string name="cloud_separation">"Voice separation (cloud-side version)"</string>
-
+    <string name="cloud_separation_sync">"Voice separation async (cloud-side version)"</string>
     <string name="title_audio_base">Basic Functions</string>
     <string name="begin_import_file">Import</string>
     <string name="base_export">Export</string>
@@ -157,9 +168,10 @@
     <string name="select_lan" priority="translator">Please select a language.</string>
     <string name="select_style" priority="translator">Please select a style.</string>
     <string name="text_complete">complete</string>
-
-    <string name="separation_accomp">accomp</string>
-    <string name="separation_brass">brass</string>
-    <string name="separation_string">string</string>
-    <string name="separation_main">lead_vocals</string>
+    <string name="beautifer_clear">Clear</string>
+    <string name="beautifer_theatre">Theatre</string>
+    <string name="beautifer_cd">CD</string>
+    <string name="beautifer_studio">Studio</string>
+    <string name="beautifer_btn">Start Voice Beautifier</string>
+    <string name="audio_clip_title">Audio Editor</string>
 </resources>

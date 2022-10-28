@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2021-2021. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2021-2022. All rights reserved.
  */
 
 package com.huawei.hms.audioeditor.demo;
@@ -12,7 +12,6 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.text.TextUtils;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
@@ -26,13 +25,17 @@ import android.widget.Toast;
 
 import com.huawei.hms.audioeditor.demo.util.FileUtils;
 import com.huawei.hms.audioeditor.demo.widget.EditDialogFragment;
+import com.huawei.hms.audioeditor.demo.widget.MyCheckBox;
 import com.huawei.hms.audioeditor.sdk.AudioParameters;
 import com.huawei.hms.audioeditor.sdk.AudioSeparationCallBack;
+import com.huawei.hms.audioeditor.sdk.AudioSeparationCreateCallBack;
+import com.huawei.hms.audioeditor.sdk.AudioSeparationTaskCallBack;
 import com.huawei.hms.audioeditor.sdk.AudioSeparationType;
 import com.huawei.hms.audioeditor.sdk.ChangeSoundCallback;
 import com.huawei.hms.audioeditor.sdk.ChangeVoiceOption;
-import com.huawei.hms.audioeditor.sdk.HAEAudioSeparationFile;
+import com.huawei.hms.audioeditor.sdk.HAEAudioSeparationAsyncFile;
 import com.huawei.hms.audioeditor.sdk.HAEChangeVoiceFile;
+import com.huawei.hms.audioeditor.sdk.HAEChangeVoiceFileCommon;
 import com.huawei.hms.audioeditor.sdk.HAEEqualizerFile;
 import com.huawei.hms.audioeditor.sdk.HAEErrorCode;
 import com.huawei.hms.audioeditor.sdk.HAELocalAudioSeparationFile;
@@ -40,9 +43,14 @@ import com.huawei.hms.audioeditor.sdk.HAENoiseReductionFile;
 import com.huawei.hms.audioeditor.sdk.HAESceneFile;
 import com.huawei.hms.audioeditor.sdk.HAESoundFieldFile;
 import com.huawei.hms.audioeditor.sdk.HAETempoPitch;
+import com.huawei.hms.audioeditor.sdk.VoiceTypeCommon;
 import com.huawei.hms.audioeditor.sdk.bean.SeparationBean;
+import com.huawei.hms.audioeditor.sdk.bean.SeparationQueryTaskResp;
+import com.huawei.hms.audioeditor.sdk.materials.network.MaterialsDownloadCallBack;
 import com.huawei.hms.audioeditor.sdk.materials.network.SeparationCloudCallBack;
+import com.huawei.hms.audioeditor.sdk.util.SmartLog;
 
+import java.io.File;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -67,6 +75,8 @@ public class FileApiActivity extends AppCompatActivity
     private Button cancel;
     private RadioGroup rgFileSoundType;
     private Button beginFileChange;
+    private RadioGroup rgSoundTypeCommon;
+    private Button beginChangeCommon;
     private RadioGroup rgFileEnvType;
     private Button beginFileEvn;
     private RadioGroup rgFileSoundGround;
@@ -79,16 +89,9 @@ public class FileApiActivity extends AppCompatActivity
     private SeekBar sbPitch;
     private Button beginFileSpeedPitch;
     private Button beginFileReduction;
-    private Button beginDevide;
-    private CheckBox rbAccompaniment;
-    private CheckBox rbVocals;
-    private CheckBox rbFiddle;
-    private CheckBox rbGuitar;
-    private CheckBox rbPiano;
-    private CheckBox rbBass;
-    private CheckBox rbDrums;
 
     private volatile boolean isProcessing;
+    private boolean isFinished = false;
 
     private static final int TYPE_NONE = 0;
     private static final int TYPE_CHANGE_SOUND = 1;
@@ -99,6 +102,9 @@ public class FileApiActivity extends AppCompatActivity
     private static final int TYPE_REDUCTION = 6;
     private static final int TYPE_SPACE_RENDER = 7;
     private static final int TYPE_DIVIDE = 8;
+    private static final int TYPE_DIVIDE_SYNC = 9;
+    private static final int TYPE_DIVIDE_LOCAL = 10;
+    private static final int TYPE_CHANGE_SOUND_COMMON = 11;
     private int currentType = TYPE_NONE;
 
     // Cloud-side audio source separation, separation type
@@ -114,6 +120,8 @@ public class FileApiActivity extends AppCompatActivity
     private RadioButton mRbMale;
 
     private String currentName = "";
+
+    private String taskId;
 
     String outputPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).getPath()+"/AudioEdit/sample";
 
@@ -178,28 +186,23 @@ public class FileApiActivity extends AppCompatActivity
     // tones
     private float pitch = 1.0F;
 
-    // Maximum speed
-    private static final float MAX_SPEED_VALUE = 10.0f;
-    private static final int MAX_SPEED_PROGRESS_VALUE = 100;
+    private static final int REQUEST_CODE_FOR_SELECT_AUDIO = 1000;
 
     private ChangeVoiceOption changeVoiceOption;
 
     // Minimum value of multiple speed
     private static final float MIN_SPEED_VALUE = 0.5f;
-    private static final int MIN_SPEED_PROGRESS_VALUE = 0;
-    private final float PROGRESS_SPEED_INTERVAL = bigDiv(MAX_SPEED_VALUE - MIN_SPEED_VALUE,
-            MAX_SPEED_PROGRESS_VALUE - MIN_SPEED_PROGRESS_VALUE);
+    private static final float PROGRESS_SPEED_INTERVAL = 0.095f;
 
     private HAEChangeVoiceFile haeChangeVoiceFile;
+    private HAEChangeVoiceFileCommon  haeChangeVoiceFileCommon;
     private HAESceneFile haeSceneFile;
     private HAESoundFieldFile haeSoundFieldFile;
     private HAEEqualizerFile haeEqualizerFile;
     private HAETempoPitch haeTempoPitch;
-    private HAEAudioSeparationFile haeAudioSeparationFile;
+    private HAEAudioSeparationAsyncFile haeAudioSeparationAsyncFile;
     private HAENoiseReductionFile haeNoiseReductionFile;
     private HAELocalAudioSeparationFile audioSeparationFile;
-
-    private int REQUEST_CODE_FOR_SELECT_AUDIO = 1000;
 
     private ConstraintLayout constraintLayout;
     private LinearLayout separationDivider;
@@ -224,6 +227,14 @@ public class FileApiActivity extends AppCompatActivity
         initSeekBar();
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (progressDialog != null) {
+            progressDialog.dismiss();
+        }
+    }
+
     private void initView() {
         constraintLayout = findViewById(R.id.constraintLayout);
         fileBack = findViewById(R.id.back);
@@ -237,8 +248,12 @@ public class FileApiActivity extends AppCompatActivity
         cancel.setOnClickListener(this);
         beginFileChange = findViewById(R.id.begin_change);
         beginFileChange.setOnClickListener(this);
+        beginChangeCommon = findViewById(R.id.begin_change_common);
+        beginChangeCommon.setOnClickListener(this);
         rgFileSoundType = findViewById(R.id.rg_sound_type);
         rgFileSoundType.setOnCheckedChangeListener(this);
+        rgSoundTypeCommon = findViewById(R.id.rg_sound_type_common);
+        rgSoundTypeCommon.setOnCheckedChangeListener(this);
         rgFileEnvType = findViewById(R.id.rg_env_type);
         rgFileEnvType.setOnCheckedChangeListener(this);
         beginFileEvn = findViewById(R.id.begin_env);
@@ -259,8 +274,8 @@ public class FileApiActivity extends AppCompatActivity
         beginFileSpeedPitch.setOnClickListener(this);
         beginFileReduction = findViewById(R.id.begin_reduction);
         beginFileReduction.setOnClickListener(this);
-        beginDevide = findViewById(R.id.begin_devide);
-        beginDevide.setOnClickListener(this);
+        findViewById(R.id.rb_normal_common).setVisibility(View.GONE);
+        findViewById(R.id.begin_devide_aync).setOnClickListener(this);
         findViewById(R.id.begin_vocals_devide).setOnClickListener(this);
 
         rgSoundSex = findViewById(R.id.rg_sound_sex);
@@ -273,12 +288,12 @@ public class FileApiActivity extends AppCompatActivity
         mSbTones.setMax(54);
 
         mTvSeekValue1 = findViewById(R.id.tv_value_1);
-        mTvSeekValue1.setText(0.3 + "");
+        mTvSeekValue1.setText(String.valueOf(0.3));
         mSbTones.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
                 float val = (float) (i + 6) / 20;
-                mTvSeekValue1.setText(val + "");
+                mTvSeekValue1.setText(String.valueOf(val));
                 changeVoiceOption.setPitch(val);
             }
 
@@ -300,56 +315,60 @@ public class FileApiActivity extends AppCompatActivity
         localInstruments = new ArrayList<>();
         // default
         localInstruments.add(AudioSeparationType.VOCALS);
-        rbVocals = findViewById(R.id.rbVocals);
-        rbVocals.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if (isChecked) {
-                    localInstruments.add(AudioSeparationType.VOCALS);
-                } else {
-                    localInstruments.remove(AudioSeparationType.VOCALS);
-                }
-            }
-        });
+        CheckBox rbVocals = findViewById(R.id.rbVocals);
+        setCheckedChangeListener(rbVocals, AudioSeparationType.VOCALS);
+
+        CheckBox rbAccomp = findViewById(R.id.rbAccomp);
+        setCheckedChangeListener(rbAccomp, AudioSeparationType.ACCOMP);
+
+        CheckBox rbDrums = findViewById(R.id.rbDrums);
+        setCheckedChangeListener(rbDrums, AudioSeparationType.DRUMS);
+
+        CheckBox rbBass = findViewById(R.id.rbBass);
+        setCheckedChangeListener(rbBass, AudioSeparationType.BASS);
 
         CheckBox rbGuitar = findViewById(R.id.rbGuitar);
-        rbGuitar.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if (isChecked) {
-                    localInstruments.add(AudioSeparationType.AGUITAR);
-                } else {
-                    localInstruments.remove(AudioSeparationType.AGUITAR);
-                }
-            }
-        });
+        setCheckedChangeListener(rbGuitar, AudioSeparationType.AGUITAR);
 
         CheckBox rbElectricGuitar = findViewById(R.id.rbElectricGuitar);
-        rbElectricGuitar.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if (isChecked) {
-                    localInstruments.add(AudioSeparationType.EGUITAR);
-                } else {
-                    localInstruments.remove(AudioSeparationType.EGUITAR);
-                }
-            }
-        });
+        setCheckedChangeListener(rbElectricGuitar, AudioSeparationType.EGUITAR);
+
+        CheckBox rbBrass = findViewById(R.id.rbBrass);
+        setCheckedChangeListener(rbBrass, AudioSeparationType.BRASS_STRING);
+
+        CheckBox rbString = findViewById(R.id.rbString);
+        setCheckedChangeListener(rbString, AudioSeparationType.STRING);
+
+        CheckBox rbMainVoice = findViewById(R.id.rbMainVoice);
+        setCheckedChangeListener(rbMainVoice, AudioSeparationType.LEAD_VOCALS);
 
         CheckBox rbPiano = findViewById(R.id.rbPiano);
-        rbPiano.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+        setCheckedChangeListener(rbPiano, AudioSeparationType.PIANO);
+        CheckBox rbAccompAcc = findViewById(R.id.rbAccompAcc);
+        setCheckedChangeListener(rbAccompAcc, AudioSeparationType.LEAD_BACK_ACC);
+    }
+
+    private void setCheckedChangeListener(CheckBox checkBox, String instrument) {
+        checkBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 if (isChecked) {
-                    localInstruments.add(AudioSeparationType.PIANO);
+                    localInstruments.add(instrument);
                 } else {
-                    localInstruments.remove(AudioSeparationType.PIANO);
+                    localInstruments.remove(instrument);
                 }
             }
         });
     }
 
     private void initAllAbility() {
+        if (!new File(outputPath).exists()) {
+            if (!new File(outputPath).mkdirs()) {
+                SmartLog.i(TAG, "mkdirs failed");
+            }
+        }
+        haeChangeVoiceFileCommon = new HAEChangeVoiceFileCommon();
+        haeChangeVoiceFileCommon.changeVoiceType(VoiceTypeCommon.SEASONED);
         haeChangeVoiceFile = new HAEChangeVoiceFile();
         changeVoiceOption = new ChangeVoiceOption();
         changeVoiceOption.setSpeakerSex(ChangeVoiceOption.SpeakerSex.MALE);
@@ -372,19 +391,15 @@ public class FileApiActivity extends AppCompatActivity
 
         haeNoiseReductionFile = new HAENoiseReductionFile();
 
-        haeAudioSeparationFile = new HAEAudioSeparationFile();
+        haeAudioSeparationAsyncFile = new HAEAudioSeparationAsyncFile();
         instruments = new ArrayList<>();
-        haeAudioSeparationFile.getInstruments(new SeparationCloudCallBack<List<SeparationBean>>() {
+        haeAudioSeparationAsyncFile.getInstruments(new SeparationCloudCallBack<List<SeparationBean>>() {
             @Override
             public void onFinish(List<SeparationBean> response) {
                 if (response != null && !response.isEmpty()) {
                     for (SeparationBean separationBean : response) {
-                        CheckBox cb = new CheckBox(FileApiActivity.this);
+                        MyCheckBox cb = new MyCheckBox(FileApiActivity.this);
                         cb.setText(separationBean.getDesc());
-                        cb.setTextColor(getResources().getColor(R.color.white));
-                        LinearLayout.LayoutParams cbParam = new LinearLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                        cb.setLayoutParams(cbParam);
                         separationDivider.addView(cb);
 
                         cb.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -457,7 +472,6 @@ public class FileApiActivity extends AppCompatActivity
                         tvPitch.setText("+" + format(pitch));
                     } else {
                         pitch = 0.1F;
-                        sbSpeed.setProgress(1);
                         tvPitch.setText("+" + "0.1");
                     }
                 }
@@ -514,8 +528,11 @@ public class FileApiActivity extends AppCompatActivity
             case R.id.begin_change :
                 beginDealAudioFile(TYPE_CHANGE_SOUND);
                 break;
-            case R.id.begin_devide :
-                beginDivideAudioFile();
+            case R.id.begin_change_common:
+                beginDealAudioFile(TYPE_CHANGE_SOUND_COMMON);
+                break;
+            case R.id.begin_devide_aync :
+                beginDivideAudioFileAsync();
                 break;
             case R.id.begin_vocals_devide :
                 beginLocalDivideAudioFile();
@@ -551,16 +568,14 @@ public class FileApiActivity extends AppCompatActivity
     }
 
     private void cancelDeal() {
-
-        if (audioSeparationFile != null) {
-            audioSeparationFile.cancel();
-        }
         if (!isProcessing) {
             return;
         }
         hideProgress();
         if (currentType == TYPE_CHANGE_SOUND) {
             haeChangeVoiceFile.cancel();
+        } else if (currentType == TYPE_CHANGE_SOUND_COMMON) {
+            haeChangeVoiceFileCommon.cancel();
         } else if (currentType == TYPE_ENV) {
             haeSceneFile.cancel();
         } else if (currentType == TYPE_SOUND_GROUND) {
@@ -571,25 +586,49 @@ public class FileApiActivity extends AppCompatActivity
             haeTempoPitch.cancel();
         } else if (currentType == TYPE_REDUCTION) {
             haeNoiseReductionFile.cancel();
-        } else if (currentType == TYPE_DIVIDE) {
-            haeAudioSeparationFile.cancel();
+        } else if (currentType == TYPE_DIVIDE_SYNC) {
+            if (haeAudioSeparationAsyncFile != null) {
+                haeAudioSeparationAsyncFile.cancel(taskId, new AudioSeparationTaskCallBack<Integer>() {
+                    @Override
+                    public void onResult(Integer result) {
+                        isFinished = true;
+                        isProcessing = false;
+                        runOnUiThread(
+                                () -> {
+                                    hideProgress();
+                                    Toast.makeText(
+                                            FileApiActivity.this,
+                                            "cancel: Success" ,
+                                            Toast.LENGTH_SHORT)
+                                            .show();
+                                });
+                    }
+
+                    @Override
+                    public void onFail(String taskId, int errorCode) {
+                    }
+                });
+            }
+        } else if (currentType == TYPE_DIVIDE_LOCAL) {
+            if (audioSeparationFile != null) {
+                audioSeparationFile.cancelAllTasks();
+            }
         }
     }
 
-    private void beginDivideAudioFile() {
+    private void beginDivideAudioFileAsync() {
         isProcessing = true;
-        currentType = TYPE_DIVIDE;
+        currentType = TYPE_DIVIDE_SYNC;
         if (TextUtils.isEmpty(filePath)) {
             Toast.makeText(this, getResources().getString(R.string.select_none_audio), Toast.LENGTH_SHORT).show();
             return;
         }
-        String name = getOrgName() + "_AudioDivide";
-        realDivideAudio(name);
+        realDivideAudioAsync();
     }
 
     private void beginLocalDivideAudioFile() {
         isProcessing = true;
-        currentType = TYPE_DIVIDE;
+        currentType = TYPE_DIVIDE_LOCAL;
         if (TextUtils.isEmpty(filePath)) {
             Toast.makeText(this, getResources().getString(R.string.select_none_audio), Toast.LENGTH_SHORT).show();
             return;
@@ -598,63 +637,131 @@ public class FileApiActivity extends AppCompatActivity
         realLocalDivideAudio(name);
     }
 
-    private void realDivideAudio(String name) {
+    /**
+     * The asynchronous method for separating audio instruments
+     * creates a task and returns the task ID to query the separation result.
+     *
+     */
+    private void realDivideAudioAsync() {
+        isFinished = false;
         showProgress();
-        haeAudioSeparationFile.setInstruments(instruments);
-        haeAudioSeparationFile.startSeparationTasks(filePath, outputPath, name, new AudioSeparationCallBack() {
+        haeAudioSeparationAsyncFile.setInstruments(instruments);
+        haeAudioSeparationAsyncFile.createSeparationTask(filePath, new AudioSeparationCreateCallBack<String>() {
             @Override
-            public void onResult(SeparationBean separationBean) {
-                runOnUiThread(() -> {
-                    Toast.makeText(FileApiActivity.this,
-                            separationBean.getInstrument() + " Success: " + separationBean.getOutAudioPath(),
-                            Toast.LENGTH_SHORT).show();
-                    isProcessing = false;
-                    hideProgress();
-                });
+            public void onResult(String taskId) {
+                FileApiActivity.this.taskId = taskId;
+                queryInstrumentStatusTask(taskId);
             }
 
             @Override
-            public void onFinish(List<SeparationBean> separationBeans) {
-                runOnUiThread(() -> {
-                    isProcessing = false;
-                    hideProgress();
-                });
+            public void onFail(String taskId ,int errorCode) {
+                isFinished = true;
+                runOnUiThread(
+                        () -> {
+                            hideProgress();
+                            Toast.makeText(
+                                    FileApiActivity.this,
+                                    "errorCode: " + errorCode,
+                                    Toast.LENGTH_SHORT)
+                                    .show();
+                        });
             }
 
             @Override
-            public void onFail(int errorCode) {
-                runOnUiThread(() -> {
-
-                    isProcessing = false;
-                    hideProgress();
-                    if (errorCode != HAEErrorCode.FAIL_FILE_EXIST) {
-                        Toast.makeText(FileApiActivity.this, "ErrorCode : " + errorCode, Toast.LENGTH_SHORT).show();
-                    } else {
-                        Toast.makeText(FileApiActivity.this, getResources().getString(R.string.file_exists),
-                                Toast.LENGTH_LONG).show();
-                        EditDialogFragment.newInstance("", name, (newName, dialog) -> {
-                            realDivideAudio(newName);
-                            dialog.dismiss();
-                        }).show(getSupportFragmentManager(), "EditDialogFragment");
-                    }
-                });
-            }
-
-            @Override
-            public void onCancel() {
-                runOnUiThread(() -> {
-                    isProcessing = false;
-                    Toast.makeText(FileApiActivity.this, "Cancel !", Toast.LENGTH_SHORT).show();
-                    hideProgress();
-                });
+            public void onStart(String taskid) {
+                FileApiActivity.this.taskId = taskid;
             }
         });
+    }
+
+    private void queryInstrumentStatusTask(String taskId) {
+        new Thread(() -> {
+            while (!isFinished) {
+                haeAudioSeparationAsyncFile.queryInstrumentTaskStatus(taskId, new AudioSeparationTaskCallBack<SeparationQueryTaskResp>() {
+                    @Override
+                    public void onResult(SeparationQueryTaskResp result) {
+                        // completed
+                        if ("0".equals(result.getStatusCode())) {
+                            isFinished = true;
+                            isProcessing = false;
+                            if (result.getDivideResult()!=null) {
+                                for (SeparationQueryTaskResp.SeparationResultBean separationResultBean : result.getDivideResult()) {
+                                    downloadResource(separationResultBean);
+                                }
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onFail(String taskId, int errorCode) {
+                        isFinished = true;
+                        isProcessing = false;
+                        runOnUiThread(
+                                () -> {
+                                    hideProgress();
+                                    Toast.makeText(
+                                            FileApiActivity.this,
+                                            "errorCode: " + errorCode,
+                                            Toast.LENGTH_SHORT)
+                                            .show();
+                                });
+                    }
+                });
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException e) {
+                    SmartLog.e(TAG, e.getMessage());
+                }
+            }
+
+        }).start();
+    }
+
+    private void downloadResource(SeparationQueryTaskResp.SeparationResultBean separationResultBean) {
+        String downloadUrl = separationResultBean.getUrl();
+        String saveDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).getPath();
+        String saveName =  System.currentTimeMillis() +"-"+separationResultBean.getInstrument();
+        haeAudioSeparationAsyncFile.downloadResource(
+                downloadUrl,
+                saveDirectory,
+                saveName,
+                new MaterialsDownloadCallBack() {
+                    @Override
+                    public void onDownloadSuccess(File file) {
+                        runOnUiThread(
+                                () -> {
+                                    hideProgress();
+                                    Toast.makeText(
+                                            FileApiActivity.this,
+                                            "Success: "
+                                                    + file.getPath(),
+                                            Toast.LENGTH_SHORT)
+                                            .show();
+                                });
+                    }
+
+                    @Override
+                    public void onDownloading(int progress) {}
+
+                    @Override
+                    public void onDownloadFailed(int errorCode) {
+                        runOnUiThread(
+                                () -> {
+                                    hideProgress();
+                                    Toast.makeText(
+                                            FileApiActivity.this,
+                                            "errorCode: " + errorCode,
+                                            Toast.LENGTH_SHORT)
+                                            .show();
+                                });
+                    }
+                });
     }
 
     // Voice separation function of the terminal test version
     private void realLocalDivideAudio(String name) {
         showProgress();
-        audioSeparationFile = new HAELocalAudioSeparationFile();
+        audioSeparationFile = HAELocalAudioSeparationFile.getInstance();
         audioSeparationFile.setInstruments(localInstruments);
         audioSeparationFile.startSeparationTask(filePath, outputPath, name, new AudioSeparationCallBack() {
             @Override
@@ -711,7 +818,7 @@ public class FileApiActivity extends AppCompatActivity
     private void showProgress() {
         if (progressDialog != null) {
             initProgress();
-            if (currentType == TYPE_DIVIDE) {
+            if (currentType == TYPE_DIVIDE || currentType == TYPE_DIVIDE_SYNC || currentType == TYPE_DIVIDE_LOCAL) {
                 progressDialog.setProgressStyle(ProgressDialog.STYLE_SPINNER);
             } else {
                 progressDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
@@ -753,6 +860,8 @@ public class FileApiActivity extends AppCompatActivity
         if (currentType == TYPE_CHANGE_SOUND) {
             haeChangeVoiceFile.changeVoiceOption(changeVoiceOption);
             haeChangeVoiceFile.applyAudioFile(filePath, outputPath, currentName, callBack);
+        } else if (currentType == TYPE_CHANGE_SOUND_COMMON) {
+            haeChangeVoiceFileCommon.applyAudioFile(filePath, outputPath, currentName, callBack);
         } else if (currentType == TYPE_ENV) {
             haeSceneFile.applyAudioFile(filePath, outputPath, currentName, callBack);
         } else if (currentType == TYPE_SOUND_GROUND) {
@@ -811,6 +920,36 @@ public class FileApiActivity extends AppCompatActivity
                 changeVoiceOption.setVoiceType(ChangeVoiceOption.VoiceType.CARTOON);
                 haeChangeVoiceFile.changeVoiceOption(changeVoiceOption);
                 resetpitch();
+                break;
+            case R.id.rb_uncle_common :
+                haeChangeVoiceFileCommon.changeVoiceType(VoiceTypeCommon.SEASONED);
+                break;
+            case R.id.rb_lori_common :
+                haeChangeVoiceFileCommon.changeVoiceType(VoiceTypeCommon.CUTE);
+                break;
+            case R.id.rb_female_common :
+                haeChangeVoiceFileCommon.changeVoiceType(VoiceTypeCommon.FEMALE);
+                break;
+            case R.id.rb_male_common :
+                haeChangeVoiceFileCommon.changeVoiceType(VoiceTypeCommon.MALE);
+                break;
+            case R.id.rb_monsters_common :
+                haeChangeVoiceFileCommon.changeVoiceType(VoiceTypeCommon.MONSTER);
+                break;
+            case R.id.rb_trill_common :
+                haeChangeVoiceFileCommon.changeVoiceType(VoiceTypeCommon.TRILL);
+                break;
+            case R.id.rb_cyberpunk_common :
+                haeChangeVoiceFileCommon.changeVoiceType(VoiceTypeCommon.CYBERPUNK);
+                break;
+            case R.id.rb_war_common :
+                haeChangeVoiceFileCommon.changeVoiceType(VoiceTypeCommon.WAR);
+                break;
+            case R.id.rb_mix_common :
+                haeChangeVoiceFileCommon.changeVoiceType(VoiceTypeCommon.MIX);
+                break;
+            case R.id.rb_synth_common :
+                haeChangeVoiceFileCommon.changeVoiceType(VoiceTypeCommon.SYNTH);
                 break;
             case R.id.rb_gb :
                 haeSceneFile.setTypeOfFile(AudioParameters.ENVIRONMENT_TYPE_BROADCAST);
@@ -912,13 +1051,13 @@ public class FileApiActivity extends AppCompatActivity
     }
 
     private float getDefaultPitch() {
-        float[] pitch;
+        float[] pitchs;
         if (mRbMan.isChecked()) {
-            pitch = malePitch;
+            pitchs = malePitch;
         } else {
-            pitch = femalePitch;
+            pitchs = femalePitch;
         }
-        return pitch[currentVoiceType];
+        return pitchs[currentVoiceType];
     }
 
     private void resetpitch() {
